@@ -23,6 +23,8 @@ class Login(AuthenticationForm):
     class for added security features.
     """
     region = forms.ChoiceField(label=_("Region"), required=False)
+    domain_required = getattr(settings, 'MULTIDOMAIN_SUPPORT', False)
+    domain = forms.CharField(label=_("Domain"), required=domain_required)
     username = forms.CharField(label=_("User Name"))
     password = forms.CharField(label=_("Password"),
                                widget=forms.PasswordInput(render_value=False))
@@ -30,6 +32,10 @@ class Login(AuthenticationForm):
 
     def __init__(self, *args, **kwargs):
         super(Login, self).__init__(*args, **kwargs)
+        self.fields.keyOrder = ['domain', 'username', 'password',
+                                'region', 'tenant']
+        if not getattr(settings, 'MULTIDOMAIN_SUPPORT', False):
+            self.fields['domain'].widget = forms.widgets.HiddenInput()
         self.fields['region'].choices = self.get_region_choices()
         if len(self.fields['region'].choices) == 1:
             self.fields['region'].initial = self.fields['region'].choices[0][0]
@@ -45,6 +51,7 @@ class Login(AuthenticationForm):
         username = self.cleaned_data.get('username')
         password = self.cleaned_data.get('password')
         region = self.cleaned_data.get('region')
+        domain = self.cleaned_data.get('domain')
         tenant = self.cleaned_data.get('tenant')
 
         if not tenant:
