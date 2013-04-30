@@ -1,5 +1,6 @@
 """ Module defining the Django auth backend class for the Keystone API. """
 
+import abc
 import hashlib
 import logging
 
@@ -22,9 +23,131 @@ KEYSTONE_CLIENT_ATTR = "_keystoneclient"
 
 
 class KeystoneBackend(object):
+
+    keystone = None
+
+    def __init__(self):
+        self.keystone = Keystone.factory()
+
+    @property
+    def request(self):
+        return self.keystone.request
+
+    @request.setter
+    def request(self, value):
+        self.keystone.request = value
+
+    def check_auth_expiry(self, token):
+        return self.keystone.check_auth_expiry(token=token)
+
+    def get_user(self, user_id):
+        return self.keystone.get_user(user_id=user_id)
+
+    def authenticate(self, **kwargs):
+        return self.keystone.authenticate(**kwargs)
+
+    def get_group_permissions(self, user, obj=None):
+        return self.keystone.get_group_permissions(user=user, obj=obj)
+
+    def get_all_permissions(self, user, obj=None):
+        return self.keystone.get_all_permissions(user=user, obj=obj)
+
+    def has_perm(self, user, perm, obj=None):
+        return self.keystone.has_perm(user=user, perm=perm, obj=obj)
+
+    def has_module_perms(self, user, app_label):
+        return self.keystone.has_module_perms(user=user, app_label=app_label)
+
+
+class Keystone(object):
     """
     Django authentication backend class for use with ``django.contrib.auth``.
     """
+
+    __metaclass__ = abc.ABCMeta
+
+    @classmethod
+    def factory(cls):
+        """
+        Create Keystone object given the arguments.
+        """
+        if KeystoneV3.isValid():
+            return KeystoneV3()
+        elif KeystoneV2.isValid():
+            return KeystoneV2()
+        else:
+            raise NotImplementedError('Keystone version could not '
+                                      'be identified.')
+
+    @abc.abstractmethod
+    def check_auth_expiry(self, token):
+        raise NotImplementedError()
+
+    @abc.abstractmethod
+    def get_user(self, user_id):
+        """
+        Returns the current user (if authenticated) based on the user ID
+        and session data.
+
+        Note: this required monkey-patching the ``contrib.auth`` middleware
+        to make the ``request`` object available to the auth backend class.
+        """
+        raise NotImplementedError()
+
+    @abc.abstractmethod
+    def authenticate(self, **kwargs):
+        """ Authenticates a user via the Keystone Identity API. """
+        raise NotImplementedError()
+
+    @abc.abstractmethod
+    def get_group_permissions(self, user, obj=None):
+        """ Returns an empty set since Keystone doesn't support "groups". """
+        raise NotImplementedError()
+
+    @abc.abstractmethod
+    def get_all_permissions(self, user, obj=None):
+        """
+        Returns a set of permission strings that this user has through his/her
+        Keystone "roles".
+
+        The permissions are returned as ``"openstack.{{ role.name }}"``.
+        """
+        raise NotImplementedError()
+
+    @abc.abstractmethod
+    def has_perm(self, user, perm, obj=None):
+        """ Returns True if the given user has the specified permission. """
+        raise NotImplementedError()
+
+    @abc.abstractmethod
+    def has_module_perms(self, user, app_label):
+        """
+        Returns True if user has any permissions in the given app_label.
+
+        Currently this matches for the app_label ``"openstack"``.
+        """
+        raise NotImplementedError()
+
+
+class KeystoneV2(Keystone):
+
+    @classmethod
+    def isValid(cls):
+        keystone_version = getattr(settings,
+                                   'OPENSTACK_KEYSTONE_VERSION',
+                                   'V2')
+        return keystone_version == 'V2'
+
+    def get_user(self, user_id):
+        if user_id == self.request.session["user_id"]:
+            token = Token(TokenManager(None),
+                          self.request.session['token'],
+                          loaded=True)
+            endpoint = self.request.session['region_endpoint']
+            return create_user_from_token(self.request, token, endpoint)
+        else:
+            return None
+
     def check_auth_expiry(self, token):
         if not check_token_expiration(token):
             msg = _("The authentication token issued by the Identity service "
@@ -36,27 +159,9 @@ class KeystoneBackend(object):
             raise KeystoneAuthException(msg)
         return True
 
-    def get_user(self, user_id):
-        """
-        Returns the current user (if authenticated) based on the user ID
-        and session data.
-
-        Note: this required monkey-patching the ``contrib.auth`` middleware
-        to make the ``request`` object available to the auth backend class.
-        """
-        if user_id == self.request.session["user_id"]:
-            token = Token(TokenManager(None),
-                          self.request.session['token'],
-                          loaded=True)
-            endpoint = self.request.session['region_endpoint']
-            return create_user_from_token(self.request, token, endpoint)
-        else:
-            return None
-
     def authenticate(self, request=None, username=None, password=None,
                      tenant=None, auth_url=None):
-        """ Authenticates a user via the Keystone Identity API. """
-        LOG.debug('Beginning user authentication for user "%s".' % username)
+        LOG.debug('Beginning user V2 authentication for user "%s".' % username)
 
         insecure = getattr(settings, 'OPENSTACK_SSL_NO_VERIFY', False)
 
@@ -141,16 +246,9 @@ class KeystoneBackend(object):
         return user
 
     def get_group_permissions(self, user, obj=None):
-        """ Returns an empty set since Keystone doesn't support "groups". """
         return set()
 
     def get_all_permissions(self, user, obj=None):
-        """
-        Returns a set of permission strings that this user has through his/her
-        Keystone "roles".
-
-        The permissions are returned as ``"openstack.{{ role.name }}"``.
-        """
         if user.is_anonymous() or obj is not None:
             return set()
         # TODO: Integrate policy-driven RBAC when supported by Keystone.
@@ -161,20 +259,33 @@ class KeystoneBackend(object):
         return role_perms | service_perms
 
     def has_perm(self, user, perm, obj=None):
-        """ Returns True if the given user has the specified permission. """
         if not user.is_active:
             return False
         return perm in self.get_all_permissions(user, obj)
 
     def has_module_perms(self, user, app_label):
-        """
-        Returns True if user has any permissions in the given app_label.
-
-        Currently this matches for the app_label ``"openstack"``.
-        """
         if not user.is_active:
             return False
         for perm in self.get_all_permissions(user):
             if perm[:perm.index('.')] == app_label:
                 return True
         return False
+
+
+class KeystoneV3(Keystone):
+
+    @classmethod
+    def isValid(cls):
+        keystone_version = getattr(settings,
+                                   'OPENSTACK_KEYSTONE_VERSION',
+                                   'V2')
+        return keystone_version == 'V3'
+
+    def authenticate(self, request=None, username=None, password=None,
+                     tenant=None, auth_url=None):
+        print '=========== Auth V3 API'
+        super(KeystoneV3, self).authenticate(request=request,
+                                             username=username,
+                                             password=password,
+                                             tenant=tenant,
+                                             auth_url=auth_url)
