@@ -23,7 +23,9 @@ class Login(AuthenticationForm):
     class for added security features.
     """
     region = forms.ChoiceField(label=_("Region"), required=False)
-    domain_required = getattr(settings, 'MULTIDOMAIN_SUPPORT', False)
+    domain_required = getattr(settings,
+                              'OPENSTACK_KEYSTONE_MULTIDOMAIN_SUPPORT',
+                              False)
     domain = forms.CharField(label=_("Domain"), required=domain_required)
     username = forms.CharField(label=_("User Name"))
     password = forms.CharField(label=_("Password"),
@@ -34,7 +36,9 @@ class Login(AuthenticationForm):
         super(Login, self).__init__(*args, **kwargs)
         self.fields.keyOrder = ['domain', 'username', 'password',
                                 'region', 'tenant']
-        if not getattr(settings, 'MULTIDOMAIN_SUPPORT', False):
+        if not getattr(settings,
+                       'OPENSTACK_KEYSTONE_MULTIDOMAIN_SUPPORT',
+                       False):
             self.fields['domain'].widget = forms.widgets.HiddenInput()
         self.fields['region'].choices = self.get_region_choices()
         if len(self.fields['region'].choices) == 1:
