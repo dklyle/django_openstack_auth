@@ -49,7 +49,11 @@ def check_token_expiration(token):
 
     Returns ``True`` if the token has not yet expired, otherwise ``False``.
     """
-    expiration = parse_datetime(token.expires)
+    if get_keystone_version() < 3:
+        expiration = parse_datetime(token.expires)
+    else:
+        # V3 took care of conversion to datetime object
+        expiration = token.expires
     if settings.USE_TZ and timezone.is_naive(expiration):
         # Presumes that the Keystone is using UTC.
         expiration = timezone.make_aware(expiration, timezone.utc)
@@ -121,3 +125,7 @@ def is_safe_url(url, host=None):
         return False
     netloc = urlparse.urlparse(url)[1]
     return not netloc or netloc == host
+
+
+def get_keystone_version():
+    return getattr(settings, 'OPENSTACK_API_VERSIONS', {}).get('identity')
