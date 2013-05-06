@@ -312,20 +312,10 @@ class KeystoneV3(KeystoneManager):
         insecure = getattr(settings, 'OPENSTACK_SSL_NO_VERIFY', False)
 
         try:
-            '''
-            client = self.get_client().Client(username=username,
-                                              password=password,
-                                              user_domain_name=domain,
-                                              project_id=tenant,
-                                              auth_url=auth_url,
-                                              insecure=insecure)
-            '''
             domain = 'Default'
             client = self.get_client().Client(username=username,
                                               password=password,
-                                              #user_domain_name=domain,
-                                              #project_id='9c31c519b00e4f45b086cb95e770549d',
-                                              #project_id=tenant,
+                                              user_domain_name=domain,
                                               auth_url=auth_url,
                                               insecure=insecure,
                                               debug=True)
@@ -399,9 +389,11 @@ class KeystoneV3(KeystoneManager):
             hashed_token = hashlib.md5(token.auth_token).hexdigest()
             token._auth_token = hashed_token
         # If we made it here we succeeded. Create our User!
+        # lcheng: V3 returns a tuple of endpoint instead of single URL
+        endpoint = client.auth_ref.management_url[0]
         user = create_user_from_token(request,
                                       token,
-                                      client.auth_ref.management_url)
+                                      endpoint)
 
         if request is not None:
             if is_ans1_token(unscoped_token.auth_token):

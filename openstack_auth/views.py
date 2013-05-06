@@ -1,3 +1,4 @@
+import hashlib
 import logging
 
 from threading import Thread
@@ -18,12 +19,16 @@ try:
 except ImportError:
     from .utils import is_safe_url
 
-from keystoneclient.v2_0 import client as keystone_client
 from keystoneclient import exceptions as keystone_exceptions
 
 from .forms import Login
 from .user import set_session_from_user, create_user_from_token
+from .utils import is_ans1_token, get_keystone_version
 
+if get_keystone_version() < 3:
+    from keystoneclient.v2_0 import client as keystone_client
+else:
+    from keystoneclient.v3 import client as keystone_client
 
 LOG = logging.getLogger(__name__)
 
@@ -101,11 +106,28 @@ def switch(request, tenant_id, redirect_field_name=REDIRECT_FIELD_NAME):
               % (tenant_id, request.user.username))
     insecure = getattr(settings, 'OPENSTACK_SSL_NO_VERIFY', False)
     endpoint = request.user.endpoint
-    client = keystone_client.Client(endpoint=endpoint,
-                                    insecure=insecure)
+
     try:
-        token = client.tokens.authenticate(tenant_id=tenant_id,
-                                        token=request.user.token.id)
+        if get_keystone_version() < 3:
+            client = keystone_client.Client(endpoint=endpoint,
+                                            insecure=insecure)
+
+            token = client.tokens.authenticate(tenant_id=tenant_id,
+                                               token=request.user.token.id)
+        else:
+            # lcheng: Keystone is returning V2 endpoint, auth with V3
+            v3_endpoint = endpoint.replace('v2.0', 'v3')
+            client = keystone_client.Client(project_id=tenant_id,
+                                              token=request.user.token.id,
+                                              auth_url=v3_endpoint,
+                                              insecure=insecure)
+            token = client.auth_ref
+            if is_ans1_token(token.auth_token):
+                hashed_token = hashlib.md5(token.auth_token).hexdigest()
+                token.id = hashed_token
+                token._auth_token = hashed_token
+
+
         LOG.info('Token rescoping successful.')
     except keystone_exceptions.ClientException:
         LOG.warning('Token rescoping failed.')
