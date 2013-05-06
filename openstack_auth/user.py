@@ -29,10 +29,10 @@ def set_session_from_user(request, user):
     else:
         if is_ans1_token(user.token.id):
             hashed_token = hashlib.md5(user.token.id).hexdigest()
-            user.token._auth_token = hashed_token
+            user.token.id = hashed_token
         if 'token_list' not in request.session:
             request.session['token_list'] = []
-        token_tuple = (user.endpoint, user.token.auth_token)
+        token_tuple = (user.endpoint, user.token.id)
         request.session['token_list'].append(token_tuple)
         request.session['token'] = user.token
         request.session['user_id'] = user.id

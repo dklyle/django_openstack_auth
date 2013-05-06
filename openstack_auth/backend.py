@@ -394,6 +394,10 @@ class KeystoneV3(KeystoneManager):
         # Check expiry for our new scoped token.
         self.check_auth_expiry(token)
 
+        # lcheng: Replace the token with hashed token to reduce token size
+        if is_ans1_token(token.auth_token):
+            hashed_token = hashlib.md5(token.auth_token).hexdigest()
+            token._auth_token = hashed_token
         # If we made it here we succeeded. Create our User!
         user = create_user_from_token(request,
                                       token,
@@ -402,7 +406,7 @@ class KeystoneV3(KeystoneManager):
         if request is not None:
             if is_ans1_token(unscoped_token.auth_token):
                 hashed_token = hashlib.md5(unscoped_token.auth_token).hexdigest()
-                unscoped_token._auth_token['id'] = hashed_token
+                unscoped_token._auth_token = hashed_token
             request.session['unscoped_token'] = unscoped_token.auth_token
             request.user = user
 
