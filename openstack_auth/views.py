@@ -91,10 +91,17 @@ def delete_all_tokens(token_list):
         try:
             endpoint = token_tuple[0]
             token = token_tuple[1]
-            client = keystone_client.Client(endpoint=endpoint,
-                                            token=token,
-                                            insecure=insecure)
-            client.tokens.delete(token=token)
+
+            if get_keystone_version() < 3:
+                client = keystone_client.Client(endpoint=endpoint,
+                                                token=token,
+                                                insecure=insecure,
+                                                debug=settings.DEBUG)
+                client.tokens.delete(token=token)
+            else:
+                # FIXME: KS-client does not have delete token available
+                # Need to add this later when it is exposed.
+                pass
         except keystone_exceptions.ClientException as e:
             LOG.info('Could not delete token')
 
@@ -115,19 +122,15 @@ def switch(request, tenant_id, redirect_field_name=REDIRECT_FIELD_NAME):
             token = client.tokens.authenticate(tenant_id=tenant_id,
                                                token=request.user.token.id)
         else:
-            # lcheng: Keystone is returning V2 endpoint, auth with V3
+            # FIXME: Keystone is returning V2 endpoint, auth with V3
+            # Until we have everything in V3, need to keep this around.
             v3_endpoint = endpoint.replace('v2.0', 'v3')
             client = keystone_client.Client(project_id=tenant_id,
                                               token=request.user.token.id,
                                               auth_url=v3_endpoint,
-                                              insecure=insecure)
+                                              insecure=insecure,
+                                              debug=settings.DEBUG)
             token = client.auth_ref
-            if is_ans1_token(token.auth_token):
-                hashed_token = hashlib.md5(token.auth_token).hexdigest()
-                token.id = hashed_token
-                token._auth_token = hashed_token
-
-
         LOG.info('Token rescoping successful.')
     except keystone_exceptions.ClientException:
         LOG.warning('Token rescoping failed.')

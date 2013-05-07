@@ -40,6 +40,10 @@ class Login(AuthenticationForm):
                        'OPENSTACK_KEYSTONE_MULTIDOMAIN_SUPPORT',
                        False):
             self.fields['domain'].widget = forms.widgets.HiddenInput()
+            self.fields['domain'].initial = getattr(
+                settings,
+                'OPENSTACK_KEYSTONE_DEFAULT_DOMAIN',
+                'Default')
         self.fields['region'].choices = self.get_region_choices()
         if len(self.fields['region'].choices) == 1:
             self.fields['region'].initial = self.fields['region'].choices[0][0]
@@ -69,6 +73,7 @@ class Login(AuthenticationForm):
             self.user_cache = authenticate(request=self.request,
                                            username=username,
                                            password=password,
+                                           domain=domain,
                                            tenant=tenant,
                                            auth_url=region)
             msg = 'Login successful for user "%(username)s".' % \

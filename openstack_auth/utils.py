@@ -49,6 +49,7 @@ def check_token_expiration(token):
 
     Returns ``True`` if the token has not yet expired, otherwise ``False``.
     """
+    # FIXME: 
     if get_keystone_version() < 3:
         expiration = parse_datetime(token.expires)
     else:
@@ -127,5 +128,7 @@ def is_safe_url(url, host=None):
     return not netloc or netloc == host
 
 
+# Helper for figuring out keystone version
+# Implementation will change when API version discovery is available
 def get_keystone_version():
-    return getattr(settings, 'OPENSTACK_API_VERSIONS', {}).get('identity')
+    return getattr(settings, 'OPENSTACK_API_VERSIONS', {}).get('identity', 2.0)
