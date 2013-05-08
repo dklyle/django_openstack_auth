@@ -49,7 +49,6 @@ def check_token_expiration(token):
 
     Returns ``True`` if the token has not yet expired, otherwise ``False``.
     """
-    # FIXME: 
     if get_keystone_version() < 3:
         expiration = parse_datetime(token.expires)
     else:

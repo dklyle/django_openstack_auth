@@ -73,10 +73,7 @@ class KeystoneManager(object):
         if KeystoneV3.isValid():
             return KeystoneV3()
         elif KeystoneV2.isValid():
-            try:
-                return KeystoneV2()
-            except Exception as exc:
-                print exc.message
+            return KeystoneV2()
         else:
             raise NotImplementedError('Keystone version could not '
                                       'be identified.')

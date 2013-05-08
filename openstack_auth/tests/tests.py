@@ -5,6 +5,7 @@ from django.core.urlresolvers import reverse
 
 from keystoneclient import exceptions as keystone_exceptions
 from keystoneclient.v2_0 import client
+from keystoneclient.v3 import client as client_v3
 
 import mox
 
@@ -229,3 +230,66 @@ class OpenStackAuthTests(test.TestCase):
 
     def test_switch_with_next(self):
         self.test_switch(next='/next_url')
+
+
+class OpenStackAuthTestsV3(test.TestCase):
+    def setUp(self):
+        super(OpenStackAuthTestsV3, self).setUp()
+        self.mox = mox.Mox()
+        self.data = generate_test_data()
+        endpoint = settings.OPENSTACK_KEYSTONE_URL
+        self.keystone_client_unscoped = client_v3.Client(endpoint=endpoint)
+        self.keystone_client_unscoped.auth_ref = self.data.unscoped_token_v3
+        self.keystone_client_scoped = client_v3.Client(endpoint=endpoint)
+        self.keystone_client_scoped.auth_ref = self.data.scoped_token_v3
+        # Set the settings to run on Keystone V3
+        settings.OPENSTACK_API_VERSIONS['identity'] = 3
+        settings.OPENSTACK_KEYSTONE_URL = "http://localhost:5000/v3"
+
+    def tearDown(self):
+        settings.OPENSTACK_API_VERSIONS['identity'] = 2.0
+        settings.OPENSTACK_KEYSTONE_URL = "http://localhost:5000/v2.0"
+        self.mox.UnsetStubs()
+        self.mox.VerifyAll()
+
+    def test_login(self):
+        projects = [self.data.tenant_one, self.data.tenant_two]
+        user = self.data.user
+        domain = self.data.domain
+
+        form_data = {'region': settings.OPENSTACK_KEYSTONE_URL,
+                     'domain': domain.name,
+                     'password': user.password,
+                     'username': user.name}
+
+        self.mox.StubOutWithMock(client_v3, "Client")
+        self.mox.StubOutWithMock(self.keystone_client_unscoped.projects,
+                                 "list")
+
+        client_v3.Client(auth_url=settings.OPENSTACK_KEYSTONE_URL,
+                      password=user.password,
+                      username=user.name,
+                      user_domain_name=domain.name,
+                      insecure=False,
+                      debug=settings.DEBUG) \
+                .AndReturn(self.keystone_client_unscoped)
+        self.keystone_client_unscoped.projects.list(user=user.id) \
+                .AndReturn(projects)
+        client_v3.Client(auth_url=settings.OPENSTACK_KEYSTONE_URL,
+                      project_id=projects[1].id,
+                      insecure=False,
+                      token=self.data.unscoped_token_v3.auth_token,
+                      debug=settings.DEBUG) \
+                .AndReturn(self.keystone_client_scoped)
+
+        self.mox.ReplayAll()
+
+        url = reverse('login')
+
+        # GET the page to set the test cookie.
+        response = self.client.get(url, form_data)
+        self.assertEqual(response.status_code, 200)
+
+        # POST to the page to log in.
+        response = self.client.post(url, form_data)
+        self.assertRedirects(response, settings.LOGIN_REDIRECT_URL)
